@@ -139,10 +139,17 @@ class SqlDebugEnvironment(Environment):
         return self._state
 
     def _seed_events(self, conn: sqlite3.Connection):
-        """Generate 500 event rows with fixed seed for reproducibility."""
+        """
+        Generate 500 realistic event rows for task 3.
+
+        Uses current date as base so that queries using date('now', '-30 days')
+        return real results. The random seed (42) ensures the data distribution
+        is deterministic, but the actual dates shift with wall-clock time
+        (which is what we want — the task tests index usage, not memorised output).
+        """
         rng = random.Random(42)
         event_types = ["purchase", "view", "click", "login", "logout"]
-        base = datetime(2024, 3, 1)
+        base = datetime.now()  # Current date so 30-day window has real data
         rows = [
             (
                 i,

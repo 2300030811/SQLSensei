@@ -54,7 +54,7 @@ def grade_task1(sql: str, conn: sqlite3.Connection, task) -> Tuple[float, Dict]:
     else:
         info["match"] = "wrong"
         info["expected"] = ref
-        info["got"] = agent[:5]  # show first 5 rows only
+        info["got"] = agent[:5]
 
     return round(min(score, 1.0), 4), info
 
@@ -133,8 +133,13 @@ def grade_task3(sql: str, conn: sqlite3.Connection, task) -> Tuple[float, Dict]:
     Optimize query task.
     +0.10 - SQL contains SELECT
     +0.15 - executes without error
-    +0.35 - result matches reference query output
-    +0.40 - EXPLAIN QUERY PLAN does not say 'SCAN TABLE EVENTS'
+    +0.35 - result matches reference query output (order-sensitive)
+    +0.40 - EXPLAIN QUERY PLAN shows index seek on idx_events_type_date
+            (not a full table scan — must use WHERE event_type + created_at)
+
+    NOTE: SQLite 3.45+ changed EXPLAIN format from 'SCAN TABLE X' to 'SEARCH X'.
+    We check positively for the correct index being used rather than negatively
+    for the absence of a full scan string, to be version-independent.
     """
     score, info = 0.0, {}
 
@@ -153,7 +158,7 @@ def grade_task3(sql: str, conn: sqlite3.Connection, task) -> Tuple[float, Dict]:
     info["execution"] = "success"
     info["rows_returned"] = len(rows)
 
-    # Compare to reference
+    # Compare to reference (computed live from DB)
     ok2, ref_rows, _ = _run_sql(conn, task.reference_query)
     if ok2:
         agent_s = [tuple(str(v) for v in r) for r in rows]
@@ -166,18 +171,32 @@ def grade_task3(sql: str, conn: sqlite3.Connection, task) -> Tuple[float, Dict]:
             info["match"] = "unordered"
         else:
             info["match"] = "wrong"
+            info["ref_rows"] = ref_s[:5]
+            info["got_rows"] = agent_s[:5]
 
-    # Check EXPLAIN QUERY PLAN
+    # Check EXPLAIN QUERY PLAN — must use the type+date index (index SEEK, not full scan)
+    # SQLite 3.45+: "SEARCH events USING INDEX idx_events_type_date (event_type=? AND created_at>?)"
+    # SQLite <3.45:  may say "SEARCH events USING INDEX idx_events_type_date"
+    # Both forms contain "USING INDEX IDX_EVENTS_TYPE_DATE"
+    # A full scan says "SCAN events" (no USING) or uses the wrong index
     try:
         cur = conn.cursor()
         cur.execute(f"EXPLAIN QUERY PLAN {sql}")
         plan = " ".join(str(r) for r in cur.fetchall()).upper()
-        info["explain"] = plan[:200]
-        if "SCAN TABLE EVENTS" not in plan:
+        info["explain"] = plan[:300]
+
+        uses_correct_index = "USING INDEX IDX_EVENTS_TYPE_DATE" in plan
+        if uses_correct_index:
             score += 0.40
-            info["optimization"] = "PASSED - no full table scan"
+            info["optimization"] = "PASSED - query uses idx_events_type_date index"
         else:
-            info["optimization"] = "FAILED - still scanning full table"
+            # Check what it IS doing for helpful feedback
+            if "SCAN EVENTS" in plan and "USING" not in plan.split("SCAN EVENTS")[1][:30]:
+                info["optimization"] = "FAILED - full table scan detected"
+            elif "USING INDEX IDX_EVENTS_USER" in plan:
+                info["optimization"] = "FAILED - using wrong index (user index); need type+date index"
+            else:
+                info["optimization"] = f"FAILED - not using idx_events_type_date"
     except Exception as e:
         info["explain_error"] = str(e)
 
