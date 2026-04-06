@@ -22,3 +22,7 @@ build/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Environment variables (secrets)
+.env
+.env.local

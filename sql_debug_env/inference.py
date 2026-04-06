@@ -9,7 +9,11 @@ import re
 import textwrap
 from typing import List, Optional
 
+from dotenv import load_dotenv
 from openai import OpenAI
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import env client from the package
 try:
@@ -19,9 +23,9 @@ except ImportError:
     from client import SqlDebugEnv  # type: ignore
     from models import SqlDebugAction  # type: ignore
 
-# Mandatory env vars
+# Mandatory env vars (loaded from .env file via load_dotenv())
 API_BASE_URL: str = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-API_KEY: str = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "")
+API_KEY: str = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY", "")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-Coder-32B-Instruct")
 LOCAL_IMAGE_NAME: str = os.getenv("LOCAL_IMAGE_NAME", "sql_debug_env:latest")
 
